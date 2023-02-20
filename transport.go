@@ -49,44 +49,207 @@ func (tr *tcpTransport) Listen(address string) (ln net.Listener, err error) {
 }
 
 const (
-	LogMessageType = iota + 1
-	VoteMessageType
-	InstallSnapshotMessageType
-	TimeoutNowMessageTyp
-	ClientMessageType
-	FsmViewCommandMessageType
+	shortMessage = iota + 1
+	trunkedMessage
 )
 
-type MessageType uint64
+type messageKind uint32
+
+func NewRequestMessage(data []byte) (msg RequestMessage) {
+	if data == nil {
+		data = []byte{}
+	}
+	msg = &Message{
+		kind: shortMessage,
+		data: data,
+		sink: nil,
+	}
+	return
+}
+
+func NewRequestMessageWithTrunk(data []byte, sink io.Reader) (msg RequestMessage) {
+	if data == nil {
+		data = []byte{}
+	}
+	msg = &Message{
+		kind: trunkedMessage,
+		data: data,
+		sink: sink,
+	}
+	return
+}
+
+type RequestMessage interface {
+	WriteTo(w io.Writer) (n int64, err error)
+}
+
+func NewResponseMessage() (msg ResponseMessage) {
+	msg = &Message{
+		kind: 0,
+		data: nil,
+		sink: nil,
+	}
+	return
+}
+
+type ResponseMessage interface {
+	ReadFrom(r io.Reader) (n int64, err error)
+	Bytes() (p []byte)
+	Trunk() (trunk *Trunk, has bool)
+}
+
+const (
+	trunkBufferSize = 1048576 // 1 MiB
+)
+
+type Trunk struct {
+	sink io.Reader
+}
+
+func (trunk *Trunk) Read() (p []byte, err error) {
+	buf := make([]byte, trunkBufferSize)
+	n, readErr := trunk.sink.Read(buf)
+	if readErr != nil {
+		err = readErr
+		return
+	}
+	p = buf[0:n]
+	return
+}
 
 /*
 Message
-+--------------------------- -----------+-----------+
-| Head                                  | Body      |
++---------------------------------------+-----------+
+| Header                                | Body      |
 +---------------------+-----------------+-----------+
-| 8(BigEndian)     	  | 8(BigEndian)    | n         |
+| 4(BigEndian)     	  | 4(BigEndian)    | n         |
 +---------------------+----------------- -----------+
-| Len(Data)           | Type            | Data      |
+| Len(data)           | kind            | data      |
 +---------------------+-----------------+-----------+
 */
 type Message struct {
-	Type MessageType
-	Data []byte
+	kind messageKind
+	data []byte
+	sink io.Reader
+}
+
+func (msg *Message) Trunk() (trunk *Trunk, has bool) {
+	has = msg.kind == trunkedMessage
+	if has {
+		trunk = &Trunk{
+			sink: msg.sink,
+		}
+	}
+	return
+}
+
+func (msg *Message) Bytes() (p []byte) {
+	p = msg.data
+	return
 }
 
 func (msg *Message) ReadFrom(r io.Reader) (n int64, err error) {
-	var msg0 *Message
-	msg0, n, err = readMessage(r)
+	p := make([]byte, 8)
+	hasHeader := false
+	idx := 0
+	msgKind := uint32(0)
+	var body []byte
+	for {
+		nn, readErr := r.Read(p[idx:])
+		if readErr != nil {
+			err = readErr
+			return
+		}
+		n = n + int64(nn)
+		idx = idx + nn
+		if idx < cap(p) {
+			continue
+		}
+		if !hasHeader {
+			bodyLen := binary.BigEndian.Uint32(p[0:4])
+			msgKind = binary.BigEndian.Uint32(p[4:8])
+			if msgKind == 0 {
+				err = fmt.Errorf("message: read failed cause invalid message kind")
+				return
+			}
+			hasHeader = true
+			if bodyLen == 0 {
+				err = fmt.Errorf("message: read failed cause invalid message body")
+				return
+			}
+			p = make([]byte, bodyLen)
+			idx = 0
+			continue
+		}
+		body = p
+		break
+	}
+	data := make([]byte, 0, 1)
+	data, err = snappy.Decode(data, body)
 	if err != nil {
 		return
 	}
-	msg.Type = msg0.Type
-	msg.Data = msg0.Data
+	msg.kind = messageKind(msgKind)
+	msg.data = data
+	if msg.kind == trunkedMessage {
+		msg.sink = snappy.NewReader(r)
+	}
 	return
 }
 
 func (msg *Message) WriteTo(w io.Writer) (n int64, err error) {
-	n, err = writeMessage(msg, w)
+	data := make([]byte, 0, 1)
+	if msg.data != nil && len(msg.data) > 0 {
+		data = snappy.Encode(data, msg.data)
+	}
+	dataLen := uint32(len(data))
+	p := make([]byte, 8+dataLen)
+	binary.BigEndian.PutUint32(p[0:4], dataLen)
+	binary.BigEndian.PutUint32(p[4:8], uint32(msg.kind))
+	if dataLen > 0 {
+		copy(p[8:], data)
+	}
+	for {
+		nn, writeErr := w.Write(p)
+		n = n + int64(nn)
+		if writeErr != nil {
+			err = writeErr
+			return
+		}
+		if nn < len(p) {
+			p = p[nn:]
+			continue
+		}
+		break
+	}
+	if msg.kind == trunkedMessage && msg.sink != nil {
+		snappyWriter := snappy.NewBufferedWriter(w)
+		for {
+			trunk := make([]byte, trunkBufferSize)
+			trunked, readTrunkErr := msg.sink.Read(trunk)
+			if readTrunkErr != nil {
+				if readTrunkErr == io.EOF {
+					break
+				}
+				err = fmt.Errorf("message write trunk failed, %v", readTrunkErr)
+				return
+			}
+			if trunked > 0 {
+				nn, writeErr := snappyWriter.Write(trunk[0:trunked])
+				if writeErr != nil {
+					err = writeErr
+					return
+				}
+				n = n + int64(nn)
+			}
+		}
+		flushErr := snappyWriter.Flush()
+		if flushErr != nil {
+			err = fmt.Errorf("message write trunk failed, %v", flushErr)
+			return
+		}
+		_ = snappyWriter.Close()
+	}
 	return
 }
 
@@ -127,7 +290,7 @@ func readMessage(reader io.Reader) (msg *Message, n int64, err error) {
 	}
 	if data == nil || len(data) == 0 {
 		msg = &Message{
-			Type: MessageType(msgType),
+			kind: messageKind(msgType),
 		}
 		return
 	}
@@ -137,21 +300,21 @@ func readMessage(reader io.Reader) (msg *Message, n int64, err error) {
 		return
 	}
 	msg = &Message{
-		Type: MessageType(msgType),
-		Data: decoded,
+		kind: messageKind(msgType),
+		data: decoded,
 	}
 	return
 }
 
 func writeMessage(msg *Message, writer io.Writer) (n int64, err error) {
 	data := make([]byte, 0, 1)
-	if msg.Data != nil && len(msg.Data) > 0 {
-		data = snappy.Encode(data, msg.Data)
+	if msg.data != nil && len(msg.data) > 0 {
+		data = snappy.Encode(data, msg.data)
 	}
 	dataLen := uint64(len(data))
 	p := make([]byte, 16+dataLen)
 	binary.BigEndian.PutUint64(p[0:8], dataLen)
-	binary.BigEndian.PutUint64(p[8:16], uint64(msg.Type))
+	binary.BigEndian.PutUint64(p[8:16], uint64(msg.kind))
 	if dataLen > 0 {
 		copy(p[16:], data)
 	}
