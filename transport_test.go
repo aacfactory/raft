@@ -44,7 +44,7 @@ func TestMessage_RW(t *testing.T) {
 
 	p := r.Encode()
 
-	request := raft.NewRequestMessage(p)
+	request := raft.NewRequestMessage(1, p)
 
 	buf := bytes.NewBuffer(make([]byte, 0, 1))
 
@@ -60,7 +60,7 @@ func TestMessage_RW(t *testing.T) {
 		t.Error(rErr)
 		return
 	}
-	fmt.Println(bytes.Equal(p, response.Bytes()))
+	fmt.Println(bytes.Equal(p, response.Bytes()), response.RequestType())
 }
 
 func TestMessage_Trunk(t *testing.T) {
@@ -77,7 +77,7 @@ func TestMessage_Trunk(t *testing.T) {
 	}
 	defer f.Close()
 
-	request := raft.NewRequestMessageWithTrunk(p, f)
+	request := raft.NewRequestMessageWithTrunk(1, p, f)
 
 	buf := bytes.NewBuffer(make([]byte, 0, 1))
 	_, wErr := request.WriteTo(buf)
@@ -109,6 +109,6 @@ func TestMessage_Trunk(t *testing.T) {
 		pt.Write(sp)
 	}
 
-	fmt.Println(bytes.Equal(fp, pt.Bytes()), pt.Len())
+	fmt.Println(bytes.Equal(fp, pt.Bytes()), pt.Len(), response.RequestType())
 
 }
