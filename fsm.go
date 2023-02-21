@@ -5,7 +5,7 @@ import (
 )
 
 type FSM interface {
-	Apply(data []byte) (result []byte, err error)
+	Apply(key []byte, data []byte) (result []byte, err error)
 	Snapshot() (FSMSnapshot, error)
 	Restore(snapshot io.ReadCloser) error
 }
