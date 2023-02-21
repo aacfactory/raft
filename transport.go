@@ -57,7 +57,7 @@ type messageKind uint16
 
 type MessageRequestType uint16
 
-func NewRequestMessage(requestType MessageRequestType, data []byte) (msg RequestMessage) {
+func NewMessageWriter(requestType MessageRequestType, data []byte) (msg MessageWriter) {
 	if data == nil {
 		data = []byte{}
 	}
@@ -70,7 +70,7 @@ func NewRequestMessage(requestType MessageRequestType, data []byte) (msg Request
 	return
 }
 
-func NewRequestMessageWithTrunk(requestType MessageRequestType, data []byte, sink io.Reader) (msg RequestMessage) {
+func NewMessageWriterWithTrunk(requestType MessageRequestType, data []byte, sink io.Reader) (msg MessageWriter) {
 	if data == nil {
 		data = []byte{}
 	}
@@ -83,11 +83,11 @@ func NewRequestMessageWithTrunk(requestType MessageRequestType, data []byte, sin
 	return
 }
 
-type RequestMessage interface {
+type MessageWriter interface {
 	WriteTo(w io.Writer) (n int64, err error)
 }
 
-func NewResponseMessage() (msg ResponseMessage) {
+func NewMessageReader() (msg MessageReader) {
 	msg = &Message{
 		kind: 0,
 		data: nil,
@@ -96,7 +96,7 @@ func NewResponseMessage() (msg ResponseMessage) {
 	return
 }
 
-type ResponseMessage interface {
+type MessageReader interface {
 	ReadFrom(r io.Reader) (n int64, err error)
 	RequestType() (typ MessageRequestType)
 	Bytes() (p []byte)
@@ -115,7 +115,7 @@ func (trunk *Trunk) SetLimiter(limiter uint64) {
 	trunk.sink = io.LimitReader(trunk.sink, int64(limiter))
 }
 
-func (trunk *Trunk) Read() (p []byte, err error) {
+func (trunk *Trunk) NextBlock() (p []byte, err error) {
 	buf := make([]byte, trunkBufferSize)
 	n, readErr := trunk.sink.Read(buf)
 	if readErr != nil {
@@ -123,6 +123,11 @@ func (trunk *Trunk) Read() (p []byte, err error) {
 		return
 	}
 	p = buf[0:n]
+	return
+}
+
+func (trunk *Trunk) Read(p []byte) (n int, err error) {
+	n, err = trunk.sink.Read(p)
 	return
 }
 

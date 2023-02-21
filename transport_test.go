@@ -10,59 +10,6 @@ import (
 	"time"
 )
 
-func TestMessage_RW(t *testing.T) {
-	r := &raft.AppendEntriesRequest{
-		RPCHeader: raft.RPCHeader{
-			Id:   []byte("id"),
-			Addr: []byte("addr"),
-		},
-		Term:              1,
-		PrevLogEntry:      1,
-		PrevLogTerm:       0,
-		LeaderCommitIndex: 0,
-		Entries: []*raft.Log{
-			{
-				Index:      1,
-				Term:       1,
-				Type:       raft.LogCommand,
-				Key:        []byte("k1"),
-				Data:       []byte("data"),
-				Extensions: []byte("Extensions"),
-				AppendedAt: time.Now(),
-			},
-			{
-				Index:      2,
-				Term:       1,
-				Type:       raft.LogNoop,
-				Key:        nil,
-				Data:       nil,
-				Extensions: []byte("Extensions"),
-				AppendedAt: time.Now(),
-			},
-		},
-	}
-
-	p := r.Encode()
-
-	request := raft.NewRequestMessage(1, p)
-
-	buf := bytes.NewBuffer(make([]byte, 0, 1))
-
-	_, wErr := request.WriteTo(buf)
-	if wErr != nil {
-		t.Error(wErr)
-		return
-	}
-
-	response := raft.NewResponseMessage()
-	_, rErr := response.ReadFrom(buf)
-	if rErr != nil {
-		t.Error(rErr)
-		return
-	}
-	fmt.Println(bytes.Equal(p, response.Bytes()), response.RequestType())
-}
-
 func TestMessage_Trunk(t *testing.T) {
 	p := []byte(time.Now().String())
 	fp, readFileErr := os.ReadFile(`./README.md`)
@@ -77,7 +24,7 @@ func TestMessage_Trunk(t *testing.T) {
 	}
 	defer f.Close()
 
-	request := raft.NewRequestMessageWithTrunk(1, p, f)
+	request := raft.NewMessageWriterWithTrunk(1, p, f)
 
 	buf := bytes.NewBuffer(make([]byte, 0, 1))
 	_, wErr := request.WriteTo(buf)
@@ -86,7 +33,7 @@ func TestMessage_Trunk(t *testing.T) {
 		return
 	}
 
-	response := raft.NewResponseMessage()
+	response := raft.NewMessageReader()
 	_, rErr := response.ReadFrom(buf)
 	if rErr != nil {
 		t.Error(rErr)
@@ -100,7 +47,7 @@ func TestMessage_Trunk(t *testing.T) {
 
 	pt := bytes.NewBuffer(make([]byte, 0, 1))
 	for {
-		sp, readTrunkErr := trunk.Read()
+		sp, readTrunkErr := trunk.NextBlock()
 		if readTrunkErr != nil {
 			if readTrunkErr == io.EOF {
 				break
