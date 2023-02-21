@@ -111,6 +111,10 @@ type Trunk struct {
 	sink io.Reader
 }
 
+func (trunk *Trunk) SetLimiter(limiter uint64) {
+	trunk.sink = io.LimitReader(trunk.sink, int64(limiter))
+}
+
 func (trunk *Trunk) Read() (p []byte, err error) {
 	buf := make([]byte, trunkBufferSize)
 	n, readErr := trunk.sink.Read(buf)
