@@ -15,6 +15,8 @@ const (
 	InstallSnapshotResponseType
 	TimeoutNowRequestType
 	TimeoutNowResponseType
+	HeartbeatRequestType
+	HeartbeatResponseType
 	ClusterRequestType
 	ClusterResponseType
 	FsmRequestType
@@ -82,6 +84,14 @@ func decodeRPC(msg MessageReader) (rpc RPC, err error) {
 		rpc = &TimeoutNowResponse{}
 		err = rpc.Decode(msg)
 		break
+	case HeartbeatRequestType:
+		rpc = &HeartbeatRequest{}
+		err = rpc.Decode(msg)
+		break
+	case HeartbeatResponseType:
+		rpc = &HeartbeatResponse{}
+		err = rpc.Decode(msg)
+		break
 	case ClusterRequestType:
 		rpc = &ClusterRequest{}
 		err = rpc.Decode(msg)
@@ -119,6 +129,7 @@ type AppendEntriesRequest struct {
 	PrevLogEntry      uint64
 	PrevLogTerm       uint64
 	LeaderCommitIndex uint64
+	Key               []byte
 	Entries           []*Log
 }
 
@@ -130,6 +141,7 @@ func (request *AppendEntriesRequest) Encode() (writer MessageWriter, err error) 
 	encoder.WriteUint64(request.PrevLogEntry)
 	encoder.WriteUint64(request.PrevLogTerm)
 	encoder.WriteUint64(request.LeaderCommitIndex)
+	encoder.WriteLengthFieldBasedFrame(request.Key)
 	entriesLen := uint64(0)
 	if request.Entries != nil {
 		entriesLen = uint64(len(request.Entries))
@@ -171,6 +183,11 @@ func (request *AppendEntriesRequest) Decode(msg MessageReader) (err error) {
 		return
 	}
 	request.LeaderCommitIndex, err = decoder.Uint64()
+	if err != nil {
+		err = fmt.Errorf("decode AppendEntriesRequest failed, %v", err)
+		return
+	}
+	request.Key, err = decoder.LengthFieldBasedFrame()
 	if err != nil {
 		err = fmt.Errorf("decode AppendEntriesRequest failed, %v", err)
 		return
@@ -504,54 +521,277 @@ func (response *TimeoutNowResponse) Decode(msg MessageReader) (err error) {
 	return
 }
 
+type HeartbeatPayload struct {
+	PrevLogEntry      uint64
+	PrevLogTerm       uint64
+	LeaderCommitIndex uint64
+}
+
+func (payload *HeartbeatPayload) encodeTo(encoder *encoding.Encoder) {
+	encoder.WriteUint64(payload.PrevLogEntry)
+	encoder.WriteUint64(payload.PrevLogTerm)
+	encoder.WriteUint64(payload.LeaderCommitIndex)
+}
+
+func (payload *HeartbeatPayload) decodeFrom(decoder *encoding.Decoder) (err error) {
+	payload.PrevLogEntry, err = decoder.Uint64()
+	if err != nil {
+		err = fmt.Errorf("decode HeartbeatPayload failed, %v", err)
+		return
+	}
+	payload.PrevLogTerm, err = decoder.Uint64()
+	if err != nil {
+		err = fmt.Errorf("decode HeartbeatPayload failed, %v", err)
+		return
+	}
+	payload.LeaderCommitIndex, err = decoder.Uint64()
+	if err != nil {
+		err = fmt.Errorf("decode HeartbeatPayload failed, %v", err)
+		return
+	}
+	return
+}
+
+type HeartbeatRequest struct {
+	RPCHeader
+	Term     uint64
+	Key      []byte
+	payloads []*HeartbeatPayload
+}
+
+func (request *HeartbeatRequest) Encode() (writer MessageWriter, err error) {
+	encoder := encoding.NewEncoder()
+	defer encoder.Close()
+	request.RPCHeader.encodeTo(encoder)
+	encoder.WriteUint64(request.Term)
+	encoder.WriteLengthFieldBasedFrame(request.Key)
+	payloadsLen := uint64(0)
+	if request.payloads != nil {
+		payloadsLen = uint64(len(request.payloads))
+	}
+	encoder.WriteUint64(payloadsLen)
+	for i := uint64(0); i < payloadsLen; i++ {
+		payload := request.payloads[i]
+		if payload == nil {
+			encoder.WriteLengthFieldBasedFrame([]byte{})
+			continue
+		}
+		payload.encodeTo(encoder)
+	}
+	writer = NewMessageWriter(HeartbeatRequestType, encoder.Bytes())
+	return
+}
+
+func (request *HeartbeatRequest) Decode(msg MessageReader) (err error) {
+	decoder := encoding.NewDecoder(msg.Bytes())
+	defer decoder.Close()
+	err = request.RPCHeader.decodeFrom(decoder)
+	if err != nil {
+		err = fmt.Errorf("decode HeartbeatRequest failed, %v", err)
+		return
+	}
+	request.Term, err = decoder.Uint64()
+	if err != nil {
+		err = fmt.Errorf("decode HeartbeatRequest failed, %v", err)
+		return
+	}
+	request.Key, err = decoder.LengthFieldBasedFrame()
+	if err != nil {
+		err = fmt.Errorf("decode HeartbeatRequest failed, %v", err)
+		return
+	}
+	payloadsLen, payloadsLenErr := decoder.Uint64()
+	if payloadsLenErr != nil {
+		err = fmt.Errorf("decode HeartbeatRequest failed, %v", payloadsLenErr)
+		return
+	}
+	request.payloads = make([]*HeartbeatPayload, 0, payloadsLen)
+	for i := uint64(0); i < payloadsLen; i++ {
+		payload := &HeartbeatPayload{}
+		err = payload.decodeFrom(decoder)
+		if err != nil {
+			err = fmt.Errorf("decode HeartbeatRequest failed, %v", err)
+			return
+		}
+		request.payloads = append(request.payloads, payload)
+	}
+	return
+}
+
+type HeartbeatResponse struct {
+	RPCHeader
+}
+
+func (response *HeartbeatResponse) Encode() (writer MessageWriter, err error) {
+	encoder := encoding.NewEncoder()
+	defer encoder.Close()
+	response.RPCHeader.encodeTo(encoder)
+	writer = NewMessageWriter(HeartbeatResponseType, encoder.Bytes())
+	return
+}
+
+func (response *HeartbeatResponse) Decode(msg MessageReader) (err error) {
+	decoder := encoding.NewDecoder(msg.Bytes())
+	defer decoder.Close()
+	err = response.RPCHeader.decodeFrom(decoder)
+	if err != nil {
+		err = fmt.Errorf("decode HeartbeatResponse failed, %v", err)
+		return
+	}
+	return
+}
+
 type ClusterRequest struct {
+	RPCHeader
+	Command  []byte
+	Argument []byte
 }
 
 func (request *ClusterRequest) Encode() (writer MessageWriter, err error) {
-	//TODO implement me
-	panic("implement me")
+	encoder := encoding.NewEncoder()
+	defer encoder.Close()
+	request.RPCHeader.encodeTo(encoder)
+	encoder.WriteLengthFieldBasedFrame(request.Command)
+	encoder.WriteLengthFieldBasedFrame(request.Argument)
+	writer = NewMessageWriter(ClusterRequestType, encoder.Bytes())
+	return
 }
 
 func (request *ClusterRequest) Decode(msg MessageReader) (err error) {
-	//TODO implement me
-	panic("implement me")
+	decoder := encoding.NewDecoder(msg.Bytes())
+	defer decoder.Close()
+	err = request.RPCHeader.decodeFrom(decoder)
+	if err != nil {
+		err = fmt.Errorf("decode ClusterRequest failed, %v", err)
+		return
+	}
+	request.Command, err = decoder.LengthFieldBasedFrame()
+	if err != nil {
+		err = fmt.Errorf("decode ClusterRequest failed, %v", err)
+		return
+	}
+	request.Argument, err = decoder.LengthFieldBasedFrame()
+	if err != nil {
+		err = fmt.Errorf("decode ClusterRequest failed, %v", err)
+		return
+	}
+	return
 }
 
 type ClusterResponse struct {
+	RPCHeader
+	Result []byte
+	Error  []byte
 }
 
 func (response *ClusterResponse) Encode() (writer MessageWriter, err error) {
-	//TODO implement me
-	panic("implement me")
+	encoder := encoding.NewEncoder()
+	defer encoder.Close()
+	response.RPCHeader.encodeTo(encoder)
+	encoder.WriteLengthFieldBasedFrame(response.Result)
+	encoder.WriteLengthFieldBasedFrame(response.Error)
+	writer = NewMessageWriter(ClusterResponseType, encoder.Bytes())
+	return
 }
 
 func (response *ClusterResponse) Decode(msg MessageReader) (err error) {
-	//TODO implement me
-	panic("implement me")
+	decoder := encoding.NewDecoder(msg.Bytes())
+	defer decoder.Close()
+	err = response.RPCHeader.decodeFrom(decoder)
+	if err != nil {
+		err = fmt.Errorf("decode ClusterResponse failed, %v", err)
+		return
+	}
+	response.Result, err = decoder.LengthFieldBasedFrame()
+	if err != nil {
+		err = fmt.Errorf("decode ClusterResponse failed, %v", err)
+		return
+	}
+	response.Error, err = decoder.LengthFieldBasedFrame()
+	if err != nil {
+		err = fmt.Errorf("decode ClusterResponse failed, %v", err)
+		return
+	}
+	return
 }
 
 type FsmRequest struct {
+	RPCHeader
+	Key      []byte
+	Command  []byte
+	Argument []byte
 }
 
 func (request *FsmRequest) Encode() (writer MessageWriter, err error) {
-	//TODO implement me
-	panic("implement me")
+	encoder := encoding.NewEncoder()
+	defer encoder.Close()
+	request.RPCHeader.encodeTo(encoder)
+	encoder.WriteLengthFieldBasedFrame(request.Key)
+	encoder.WriteLengthFieldBasedFrame(request.Command)
+	encoder.WriteLengthFieldBasedFrame(request.Argument)
+	writer = NewMessageWriter(FsmRequestType, encoder.Bytes())
+	return
 }
 
 func (request *FsmRequest) Decode(msg MessageReader) (err error) {
-	//TODO implement me
-	panic("implement me")
+	decoder := encoding.NewDecoder(msg.Bytes())
+	defer decoder.Close()
+	err = request.RPCHeader.decodeFrom(decoder)
+	if err != nil {
+		err = fmt.Errorf("decode FsmRequest failed, %v", err)
+		return
+	}
+	request.Key, err = decoder.LengthFieldBasedFrame()
+	if err != nil {
+		err = fmt.Errorf("decode FsmRequest failed, %v", err)
+		return
+	}
+	request.Command, err = decoder.LengthFieldBasedFrame()
+	if err != nil {
+		err = fmt.Errorf("decode FsmRequest failed, %v", err)
+		return
+	}
+	request.Argument, err = decoder.LengthFieldBasedFrame()
+	if err != nil {
+		err = fmt.Errorf("decode FsmRequest failed, %v", err)
+		return
+	}
+	return
 }
 
 type FsmResponse struct {
+	RPCHeader
+	Result []byte
+	Error  []byte
 }
 
 func (response *FsmResponse) Encode() (writer MessageWriter, err error) {
-	//TODO implement me
-	panic("implement me")
+	encoder := encoding.NewEncoder()
+	defer encoder.Close()
+	response.RPCHeader.encodeTo(encoder)
+	encoder.WriteLengthFieldBasedFrame(response.Result)
+	encoder.WriteLengthFieldBasedFrame(response.Error)
+	writer = NewMessageWriter(FsmResponseType, encoder.Bytes())
+	return
 }
 
 func (response *FsmResponse) Decode(msg MessageReader) (err error) {
-	//TODO implement me
-	panic("implement me")
+	decoder := encoding.NewDecoder(msg.Bytes())
+	defer decoder.Close()
+	err = response.RPCHeader.decodeFrom(decoder)
+	if err != nil {
+		err = fmt.Errorf("decode FsmResponse failed, %v", err)
+		return
+	}
+	response.Result, err = decoder.LengthFieldBasedFrame()
+	if err != nil {
+		err = fmt.Errorf("decode FsmResponse failed, %v", err)
+		return
+	}
+	response.Error, err = decoder.LengthFieldBasedFrame()
+	if err != nil {
+		err = fmt.Errorf("decode FsmResponse failed, %v", err)
+		return
+	}
+	return
 }
