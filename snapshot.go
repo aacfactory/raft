@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -77,6 +78,7 @@ type SnapshotMeta struct {
 	ConfigurationIndex uint64
 	Size               uint64
 	CRC                []byte
+	CreateAT           time.Time
 }
 
 func (meta *SnapshotMeta) WriteTo(writer io.Writer) (n int64, err error) {
@@ -212,7 +214,7 @@ func FileSnapshotStore(dir string) (store SnapshotStore) {
 	}
 	exist := files.ExistFile(dir)
 	if !exist {
-		if mkdirErr := os.MkdirAll(dir, 0755); mkdirErr != nil {
+		if mkdirErr := os.MkdirAll(dir, 0640); mkdirErr != nil {
 			panic(errors.Join(errors.New("failed to make snapshot dir"), mkdirErr))
 			return
 		}
@@ -238,7 +240,7 @@ func (store *fileSnapshotStore) Create(index uint64, term uint64, configuration 
 		err = errors.New("create snapshot failed cause file is exist")
 		return
 	}
-	file, createFileErr := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_SYNC, 0755)
+	file, createFileErr := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_SYNC, 0640)
 	if createFileErr != nil {
 		err = errors.Join(errors.New("create snapshot failed cause create file"), createFileErr)
 		return
@@ -295,7 +297,7 @@ func (store *fileSnapshotStore) List() (metas []*SnapshotMeta, err error) {
 		if !files.ExistFile(path) {
 			continue
 		}
-		file, openFileErr := os.OpenFile(path, os.O_RDONLY, 0755)
+		file, openFileErr := os.OpenFile(path, os.O_RDONLY, 0640)
 		if openFileErr != nil {
 			err = errors.Join(errors.New("list snapshot failed cause open file"), openFileErr)
 			return
@@ -306,6 +308,10 @@ func (store *fileSnapshotStore) List() (metas []*SnapshotMeta, err error) {
 			_ = file.Close()
 			err = errors.Join(errors.New("list snapshot failed cause decode meta"), decodeErr)
 			return
+		}
+		msec, msecErr := strconv.ParseInt(filename[strings.LastIndexByte(filename, '-')+1:strings.LastIndexByte(filename, '.')], 10, 64)
+		if msecErr == nil {
+			meta.CreateAT = time.Unix(0, msec*int64(time.Millisecond))
 		}
 		metas = append(metas, meta)
 	}
@@ -323,7 +329,7 @@ func (store *fileSnapshotStore) Open(id string) (meta *SnapshotMeta, reader io.R
 		err = errors.New("open snapshot failed cause file is not exist")
 		return
 	}
-	file, openFileErr := os.OpenFile(path, os.O_RDONLY, 0755)
+	file, openFileErr := os.OpenFile(path, os.O_RDONLY, 0640)
 	if openFileErr != nil {
 		err = errors.Join(errors.New("open snapshot failed cause open file"), openFileErr)
 		return
@@ -333,6 +339,10 @@ func (store *fileSnapshotStore) Open(id string) (meta *SnapshotMeta, reader io.R
 	if readMetaErr != nil {
 		err = errors.Join(errors.New("open snapshot failed cause read meta"), readMetaErr)
 		return
+	}
+	msec, msecErr := strconv.ParseInt(path[strings.LastIndexByte(path, '-')+1:strings.LastIndexByte(path, '.')], 10, 64)
+	if msecErr == nil {
+		meta.CreateAT = time.Unix(0, msec*int64(time.Millisecond))
 	}
 	reader = file
 	return

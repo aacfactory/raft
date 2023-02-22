@@ -54,7 +54,7 @@ func TestSnapshot(t *testing.T) {
 		metas = make([]*raft.SnapshotMeta, 0, 1)
 	}
 	for _, meta := range metas {
-		fmt.Println("list:", meta.Id, meta.Index, meta.Term, meta.Size, hex.EncodeToString(meta.CRC))
+		fmt.Println("list:", meta.Id, meta.Index, meta.Term, meta.Size, hex.EncodeToString(meta.CRC), meta.CreateAT)
 	}
 	if len(metas) > 0 {
 		meta, reader, openErr := snapshots.Open(metas[0].Id)
@@ -62,7 +62,7 @@ func TestSnapshot(t *testing.T) {
 			t.Error("open:", reader)
 			return
 		}
-		fmt.Println("open:", meta.Id, meta.Index, meta.Term, meta.Size, hex.EncodeToString(meta.CRC))
+		fmt.Println("open:", meta.Id, meta.Index, meta.Term, meta.Size, hex.EncodeToString(meta.CRC), meta.CreateAT)
 		file, _ := os.OpenFile(`G:\tmp\raft\snapshot\1.png`, os.O_CREATE|os.O_WRONLY|os.O_SYNC, 0600)
 		_, _ = bufio.NewReader(reader).WriteTo(file)
 	}
