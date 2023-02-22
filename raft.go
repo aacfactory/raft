@@ -2,10 +2,16 @@ package raft
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
-func New() (r Raft, err error) {
+func New(options Options) (r Raft, err error) {
+	err = options.Verify()
+	if err != nil {
+		err = errors.Join(errors.New("new raft failed"), err)
+		return
+	}
 
 	return
 }
