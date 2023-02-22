@@ -5,15 +5,11 @@ import (
 )
 
 type FSM interface {
-	Apply(key []byte, data []byte) (result []byte, err error)
+	Apply(data []byte) (result []byte, err error)
+	Read(command []byte, argument []byte) (result []byte, err error)
 	Snapshot() (FSMSnapshot, error)
 	Restore(snapshot io.ReadCloser) error
-}
-
-type SnapshotSink interface {
-	io.WriteCloser
-	Id() string
-	Cancel() error
+	Close() (err error)
 }
 
 type FSMSnapshot interface {
