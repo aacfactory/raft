@@ -9,6 +9,12 @@ import (
 	"time"
 )
 
+func NewDecoderFromReader(r io.Reader) *Decoder {
+	return &Decoder{
+		reader: r,
+	}
+}
+
 func NewDecoder(p []byte) *Decoder {
 	return &Decoder{
 		reader: bytes.NewReader(p),
@@ -16,7 +22,7 @@ func NewDecoder(p []byte) *Decoder {
 }
 
 type Decoder struct {
-	reader *bytes.Reader
+	reader io.Reader
 }
 
 func (decoder *Decoder) Uint64() (v uint64, err error) {
@@ -101,6 +107,12 @@ func (decoder *Decoder) LengthFieldBasedFrame() (p []byte, err error) {
 	return
 }
 
-func (decoder *Decoder) Close() {
-	decoder.reader.Reset([]byte{})
+func (decoder *Decoder) LengthFieldBasedStringFrame() (s string, err error) {
+	p, decodeErr := decoder.LengthFieldBasedFrame()
+	if decodeErr != nil {
+		err = decodeErr
+		return
+	}
+	s = string(p)
+	return
 }

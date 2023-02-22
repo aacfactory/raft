@@ -60,6 +60,10 @@ func (encoder *Encoder) WriteLengthFieldBasedFrame(p []byte) {
 	}
 }
 
+func (encoder *Encoder) Reset() {
+	encoder.buf.Reset()
+}
+
 func (encoder *Encoder) Close() {
 	bytebufferpool.Put(encoder.buf)
 }
