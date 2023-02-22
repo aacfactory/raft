@@ -19,8 +19,8 @@ const (
 	HeartbeatResponseType
 	ClusterRequestType
 	ClusterResponseType
-	FsmRequestType
-	FsmResponseType
+	FsmReadRequestType
+	FsmReadResponseType
 )
 
 type RPCHeader struct {
@@ -100,12 +100,12 @@ func decodeRPC(msg MessageReader) (rpc RPC, err error) {
 		rpc = &ClusterResponse{}
 		err = rpc.Decode(msg)
 		break
-	case FsmRequestType:
-		rpc = &FsmRequest{}
+	case FsmReadRequestType:
+		rpc = &FsmReadRequest{}
 		err = rpc.Decode(msg)
 		break
-	case FsmResponseType:
-		rpc = &FsmResponse{}
+	case FsmReadResponseType:
+		rpc = &FsmReadResponse{}
 		err = rpc.Decode(msg)
 		break
 	default:
@@ -161,7 +161,6 @@ func (request *AppendEntriesRequest) Encode() (writer MessageWriter, err error) 
 
 func (request *AppendEntriesRequest) Decode(msg MessageReader) (err error) {
 	decoder := encoding.NewDecoder(msg.Bytes())
-	defer decoder.Close()
 	err = request.RPCHeader.decodeFrom(decoder)
 	if err != nil {
 		err = fmt.Errorf("decode AppendEntriesRequest failed, %v", err)
@@ -232,7 +231,6 @@ func (response *AppendEntriesResponse) Encode() (writer MessageWriter, err error
 
 func (response *AppendEntriesResponse) Decode(msg MessageReader) (err error) {
 	decoder := encoding.NewDecoder(msg.Bytes())
-	defer decoder.Close()
 	err = response.RPCHeader.decodeFrom(decoder)
 	if err != nil {
 		err = fmt.Errorf("decode AppendEntriesResponse failed, %v", err)
@@ -283,7 +281,6 @@ func (request *VoteRequest) Encode() (writer MessageWriter, err error) {
 
 func (request *VoteRequest) Decode(msg MessageReader) (err error) {
 	decoder := encoding.NewDecoder(msg.Bytes())
-	defer decoder.Close()
 	err = request.RPCHeader.decodeFrom(decoder)
 	if err != nil {
 		err = fmt.Errorf("decode VoteRequest failed, %v", err)
@@ -330,7 +327,6 @@ func (response *VoteResponse) Encode() (writer MessageWriter, err error) {
 
 func (response *VoteResponse) Decode(msg MessageReader) (err error) {
 	decoder := encoding.NewDecoder(msg.Bytes())
-	defer decoder.Close()
 	err = response.RPCHeader.decodeFrom(decoder)
 	if err != nil {
 		err = fmt.Errorf("decode VoteResponse failed, %v", err)
@@ -393,7 +389,6 @@ func (request *InstallSnapshotRequest) Decode(msg MessageReader) (err error) {
 	request.Snapshot = trunk
 
 	decoder := encoding.NewDecoder(msg.Bytes())
-	defer decoder.Close()
 	err = request.RPCHeader.decodeFrom(decoder)
 	if err != nil {
 		err = fmt.Errorf("decode InstallSnapshotRequest failed, %v", err)
@@ -456,7 +451,6 @@ func (response *InstallSnapshotResponse) Encode() (writer MessageWriter, err err
 
 func (response *InstallSnapshotResponse) Decode(msg MessageReader) (err error) {
 	decoder := encoding.NewDecoder(msg.Bytes())
-	defer decoder.Close()
 	err = response.RPCHeader.decodeFrom(decoder)
 	if err != nil {
 		err = fmt.Errorf("decode InstallSnapshotResponse failed, %v", err)
@@ -489,7 +483,6 @@ func (request *TimeoutNowRequest) Encode() (writer MessageWriter, err error) {
 
 func (request *TimeoutNowRequest) Decode(msg MessageReader) (err error) {
 	decoder := encoding.NewDecoder(msg.Bytes())
-	defer decoder.Close()
 	err = request.RPCHeader.decodeFrom(decoder)
 	if err != nil {
 		err = fmt.Errorf("decode TimeoutNowRequest failed, %v", err)
@@ -512,7 +505,6 @@ func (response *TimeoutNowResponse) Encode() (writer MessageWriter, err error) {
 
 func (response *TimeoutNowResponse) Decode(msg MessageReader) (err error) {
 	decoder := encoding.NewDecoder(msg.Bytes())
-	defer decoder.Close()
 	err = response.RPCHeader.decodeFrom(decoder)
 	if err != nil {
 		err = fmt.Errorf("decode TimeoutNowResponse failed, %v", err)
@@ -584,7 +576,6 @@ func (request *HeartbeatRequest) Encode() (writer MessageWriter, err error) {
 
 func (request *HeartbeatRequest) Decode(msg MessageReader) (err error) {
 	decoder := encoding.NewDecoder(msg.Bytes())
-	defer decoder.Close()
 	err = request.RPCHeader.decodeFrom(decoder)
 	if err != nil {
 		err = fmt.Errorf("decode HeartbeatRequest failed, %v", err)
@@ -632,7 +623,6 @@ func (response *HeartbeatResponse) Encode() (writer MessageWriter, err error) {
 
 func (response *HeartbeatResponse) Decode(msg MessageReader) (err error) {
 	decoder := encoding.NewDecoder(msg.Bytes())
-	defer decoder.Close()
 	err = response.RPCHeader.decodeFrom(decoder)
 	if err != nil {
 		err = fmt.Errorf("decode HeartbeatResponse failed, %v", err)
@@ -659,7 +649,6 @@ func (request *ClusterRequest) Encode() (writer MessageWriter, err error) {
 
 func (request *ClusterRequest) Decode(msg MessageReader) (err error) {
 	decoder := encoding.NewDecoder(msg.Bytes())
-	defer decoder.Close()
 	err = request.RPCHeader.decodeFrom(decoder)
 	if err != nil {
 		err = fmt.Errorf("decode ClusterRequest failed, %v", err)
@@ -696,7 +685,6 @@ func (response *ClusterResponse) Encode() (writer MessageWriter, err error) {
 
 func (response *ClusterResponse) Decode(msg MessageReader) (err error) {
 	decoder := encoding.NewDecoder(msg.Bytes())
-	defer decoder.Close()
 	err = response.RPCHeader.decodeFrom(decoder)
 	if err != nil {
 		err = fmt.Errorf("decode ClusterResponse failed, %v", err)
@@ -715,33 +703,25 @@ func (response *ClusterResponse) Decode(msg MessageReader) (err error) {
 	return
 }
 
-type FsmRequest struct {
+type FsmReadRequest struct {
 	RPCHeader
-	Key      []byte
 	Command  []byte
 	Argument []byte
 }
 
-func (request *FsmRequest) Encode() (writer MessageWriter, err error) {
+func (request *FsmReadRequest) Encode() (writer MessageWriter, err error) {
 	encoder := encoding.NewEncoder()
 	defer encoder.Close()
 	request.RPCHeader.encodeTo(encoder)
-	encoder.WriteLengthFieldBasedFrame(request.Key)
 	encoder.WriteLengthFieldBasedFrame(request.Command)
 	encoder.WriteLengthFieldBasedFrame(request.Argument)
-	writer = NewMessageWriter(FsmRequestType, encoder.Bytes())
+	writer = NewMessageWriter(FsmReadRequestType, encoder.Bytes())
 	return
 }
 
-func (request *FsmRequest) Decode(msg MessageReader) (err error) {
+func (request *FsmReadRequest) Decode(msg MessageReader) (err error) {
 	decoder := encoding.NewDecoder(msg.Bytes())
-	defer decoder.Close()
 	err = request.RPCHeader.decodeFrom(decoder)
-	if err != nil {
-		err = fmt.Errorf("decode FsmRequest failed, %v", err)
-		return
-	}
-	request.Key, err = decoder.LengthFieldBasedFrame()
 	if err != nil {
 		err = fmt.Errorf("decode FsmRequest failed, %v", err)
 		return
@@ -759,25 +739,24 @@ func (request *FsmRequest) Decode(msg MessageReader) (err error) {
 	return
 }
 
-type FsmResponse struct {
+type FsmReadResponse struct {
 	RPCHeader
 	Result []byte
 	Error  []byte
 }
 
-func (response *FsmResponse) Encode() (writer MessageWriter, err error) {
+func (response *FsmReadResponse) Encode() (writer MessageWriter, err error) {
 	encoder := encoding.NewEncoder()
 	defer encoder.Close()
 	response.RPCHeader.encodeTo(encoder)
 	encoder.WriteLengthFieldBasedFrame(response.Result)
 	encoder.WriteLengthFieldBasedFrame(response.Error)
-	writer = NewMessageWriter(FsmResponseType, encoder.Bytes())
+	writer = NewMessageWriter(FsmReadResponseType, encoder.Bytes())
 	return
 }
 
-func (response *FsmResponse) Decode(msg MessageReader) (err error) {
+func (response *FsmReadResponse) Decode(msg MessageReader) (err error) {
 	decoder := encoding.NewDecoder(msg.Bytes())
-	defer decoder.Close()
 	err = response.RPCHeader.decodeFrom(decoder)
 	if err != nil {
 		err = fmt.Errorf("decode FsmResponse failed, %v", err)
