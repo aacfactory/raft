@@ -1,8 +1,96 @@
+***TERM***
+收到的rpc中的term大于自己的，则node进入follower。
+收到的rpc中的term小于自己的，则忽略请求
+
+***vote***
+当存在一个leader时，向集群发送心跳，如果某一节点在一段时间内收不到心跳，则该节点认为集群中无leader，开始选举。
+1、增加自己的term。
+2、转为candidate。
+3、给自己投票。
+4、向集群广播投票请求。
+4.1、获得半数选票，则升级为leader，广播心跳（空的append rpc entry，用来提交之前复制了但没提交的日志），结束选举。
+4.2、收到来自其它节点的心跳，如果收到的term大于等于自己的，则回到follower
+4.3、在投票窗口内不存在投票结果，开启新的选举，即term+1.
+
+条件：
+1、保证被选出的leader一定包含之前各个任期的所有已经提交的日志条目（新leader与老leader在term上一样，但是却了老leader的几个已经提交的日志）
+1.1、如果投票者自己的日志比request中candidateId的还新（先判断term，再判断log），拒绝投票。
+
+
+投票逻辑（每个follower只有一张选票，先来先得的原则给）
+1、检查收到的term是否比自己的大
+2、检查lastLogIndex和lastLogTerm？？？
+vote request {
+    term        // 自己当前的任期
+    candidateId // 自己的ID
+    lastLogIndex // 自己最后一个日志号
+    lastLogTerm // 自己最后一个日志的任期
+}
+
+vote response {
+    term // 自己的term（收到vote的node的term）
+    voteGranted bool // 自己会不会投给candidate
+}
+
+***找leader***
+遍历自己的member list
+1、member知道leader，就返回，不知道leader，但是知道其它member，返回member
+2、拿到返回的member，继续遍历。
+3、都没有，则集群无leader，开启选举。
+
+***log***
+leader收到状态机请求后，
+1、创建log
+2、发送log给follow，通过append entries rpc，
+2.1（即使超过半数，但还有没有响应的follow，也要重复发，直到发达）
+2.2、follow宕机，通过一致性检查，在log请求中增加前一个log的term和index，如果follow没有，则拒绝，leader收到拒绝后，往前跳一个在发，直到接收
+3、当超过半数follow收到日志后，执行状态机，
+4、提交日志（此时leader自己的提交了，但是follow没有提交，follow是通过leaderCommitLog来确定要提交哪个日志，然后这个leaderCommitLog也在心跳里）
+4.1、关于leader提交了，但是还未让follow提交就挂了，则集群内还是没有提交的，那怎么办（引入集群提交？？还是saga）
+5、返回给client
+
+leader宕机：
+此时为提交的日志对于客户端来说是请求失败的。
+老leader恢复后是follow，收到新leader的append entries，进入一致性检查，如果发送冲突，即存在新leader没有的，则用新leader的覆盖到自己的（因为没有提交）
+
+提交：
+只有当自己的term与log的term一样时才能提交（此时如果有之前没有提交的，那才能提交之前的）
+
+append entries request {
+    term // 自己当前的term
+    leaderId  // 就是自己的id
+    prevLogIndex // 前一个日志号
+    prevLogTerm // 前一个日志的任期号
+    entries []BYTE // 状态机指令
+    leaderCommitLog // leader已经提交的日志号，follow用这个idx来提交自己收到的未提交的日志，follow的commitIdx小于等于leaderCommitIdx，那么吧commitIdx设为leaderCommitIdx和last entry index中小的那个？？
+    // leaderCommitLog 必须是自己复制出的且提交的日志，不能是被复制的日志。
+}
+
+append entries response {
+    term // follow的任期
+    succeed // 是否接收，如果follow包含前一个日志，则true，否则全是false。
+}
+
+*** 安全性 ***
+1、如果某leader在提交日志前挂了（日志已经写下并复制出去了），新leader会试图完成该日志的复制（而不是提交，不能通过心跳来提交老日志）
+// raft永远不会通过计算副本数目的方式来提交之前任期的日志。
+// 新leader会有老leader的日志（无论是否提交），都会给到其它follow，但不提交，follow
+2、只有leader当前任期内的日志才能通过副本数进行提交。
+// 一旦当前任期的某个日志被这种形式提交，那么之前所有的日志也会被提交。
+// 关于老leader内没有提交的日志，当新leader复制完老leader的日志后（同步完复制），在发一个新的日志，那么有leaderCommitLog（新的日志，而不是老的日志），此时就可以提交老的日志。
+
+***配置更新***
+集群扩容（针对可以voter的join，leader要做的是更新配置，复制配置，提交配置，配置一定是log，特殊的log）：
+两阶段
+1、leader向集群发送新的配置，集群同时适用两个配置，所有rpc在两个配置中都生效（如投票，老配置满足且新配置满足，才算投票成功）。
+2、leader向集群发送新的配置，替换到老的配置。
+
 ***NODE***
 节点之间通过quic通讯。
 集群分为两层，高层为Leader和Candidate，低层为Follower
 * 高层：数据写入与分发层，步骤为收到数据后找leader，有leader进行数据写入，并等待高层数据同步写入，然后再分发给低层。
 * 低层：数据读取层，在加入集群之后，通过与集群返回的端点建立链接，开始接收数据。
+* 观察层：只负责读高层数据，和创建事件channel
 
 ***发现***
 接口模式，返回Address（[]IP:PORT）列表，验证Address，取出一个对的。
