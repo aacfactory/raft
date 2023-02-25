@@ -3,7 +3,7 @@ package raft
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
+	"github.com/aacfactory/errors"
 	"os"
 	"strings"
 )
@@ -36,11 +36,11 @@ func (l *localTLS) Config() (server *tls.Config, client *tls.Config, err error) 
 	if l.caFilepath != "" {
 		pem, readErr := os.ReadFile(l.caFilepath)
 		if readErr != nil {
-			err = errors.Join(errors.New("read ca file failed"), readErr)
+			err = errors.ServiceError("config tls failed").WithCause(readErr)
 			return
 		}
 		if !cas.AppendCertsFromPEM(pem) {
-			err = errors.New("append ca into cert pool failed")
+			err = errors.ServiceError("config tls failed").WithCause(errors.ServiceError("append ca into cert pool failed"))
 			return
 		}
 	}
@@ -48,17 +48,17 @@ func (l *localTLS) Config() (server *tls.Config, client *tls.Config, err error) 
 	if l.serverKeyFilepath != "" && l.serverCertFilepath != "" {
 		certPEM, readCertErr := os.ReadFile(l.serverCertFilepath)
 		if readCertErr != nil {
-			err = errors.Join(errors.New("read server cert pem file failed"), readCertErr)
+			err = errors.ServiceError("config tls failed").WithCause(readCertErr)
 			return
 		}
 		keyPEM, readKeyErr := os.ReadFile(l.serverKeyFilepath)
 		if readKeyErr != nil {
-			err = errors.Join(errors.New("read server key pem file failed"), readKeyErr)
+			err = errors.ServiceError("config tls failed").WithCause(readKeyErr)
 			return
 		}
 		cert, certErr := tls.X509KeyPair(certPEM, keyPEM)
 		if certErr != nil {
-			err = errors.Join(errors.New("build server x509 key pair failed"), certErr)
+			err = errors.ServiceError("config tls failed").WithCause(certErr)
 			return
 		}
 		server = &tls.Config{
@@ -71,17 +71,17 @@ func (l *localTLS) Config() (server *tls.Config, client *tls.Config, err error) 
 	if l.clientCertFilepath != "" && l.clientKeyFilepath != "" {
 		certPEM, readCertErr := os.ReadFile(l.clientCertFilepath)
 		if readCertErr != nil {
-			err = errors.Join(errors.New("read client cert pem file failed"), readCertErr)
+			err = errors.ServiceError("config tls failed").WithCause(readCertErr)
 			return
 		}
 		keyPEM, readKeyErr := os.ReadFile(l.clientKeyFilepath)
 		if readKeyErr != nil {
-			err = errors.Join(errors.New("read client key pem file failed"), readKeyErr)
+			err = errors.ServiceError("config tls failed").WithCause(readKeyErr)
 			return
 		}
 		cert, certErr := tls.X509KeyPair(certPEM, keyPEM)
 		if certErr != nil {
-			err = errors.Join(errors.New("build client x509 key pair failed"), certErr)
+			err = errors.ServiceError("config tls failed").WithCause(certErr)
 			return
 		}
 		client = &tls.Config{
@@ -91,7 +91,7 @@ func (l *localTLS) Config() (server *tls.Config, client *tls.Config, err error) 
 		}
 	}
 	if server == nil {
-		err = errors.New("no server tls config was built")
+		err = errors.ServiceError("config tls failed").WithCause(errors.ServiceError("no server tls config was built"))
 		return
 	}
 	return
