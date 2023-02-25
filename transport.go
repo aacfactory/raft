@@ -3,7 +3,7 @@ package raft
 import (
 	"crypto/tls"
 	"encoding/binary"
-	"fmt"
+	"github.com/aacfactory/errors"
 	"github.com/golang/snappy"
 	"io"
 	"net"
@@ -178,7 +178,7 @@ func (msg *Message) ReadFrom(r io.Reader) (n int64, err error) {
 	for {
 		nn, readErr := r.Read(p[idx:])
 		if readErr != nil {
-			err = readErr
+			err = errors.ServiceError("message read from reader").WithCause(readErr)
 			return
 		}
 		n = n + int64(nn)
@@ -191,12 +191,12 @@ func (msg *Message) ReadFrom(r io.Reader) (n int64, err error) {
 			requestType = binary.BigEndian.Uint16(p[4:6])
 			msgKind = binary.BigEndian.Uint16(p[6:8])
 			if msgKind == 0 {
-				err = fmt.Errorf("message: read failed cause invalid message kind")
+				err = errors.ServiceError("message read from reader").WithCause(errors.ServiceError("invalid message kind"))
 				return
 			}
 			hasHeader = true
 			if bodyLen == 0 {
-				err = fmt.Errorf("message: read failed cause invalid message body")
+				err = errors.ServiceError("message read from reader").WithCause(errors.ServiceError("invalid message body"))
 				return
 			}
 			p = make([]byte, bodyLen)
@@ -209,6 +209,7 @@ func (msg *Message) ReadFrom(r io.Reader) (n int64, err error) {
 	data := make([]byte, 0, 1)
 	data, err = snappy.Decode(data, body)
 	if err != nil {
+		err = errors.ServiceError("message read from reader").WithCause(err)
 		return
 	}
 	msg.requestType = MessageRequestType(requestType)
@@ -237,7 +238,7 @@ func (msg *Message) WriteTo(w io.Writer) (n int64, err error) {
 		nn, writeErr := w.Write(p)
 		n = n + int64(nn)
 		if writeErr != nil {
-			err = writeErr
+			err = errors.ServiceError("message write into writer failed").WithCause(writeErr)
 			return
 		}
 		if nn < len(p) {
@@ -255,13 +256,13 @@ func (msg *Message) WriteTo(w io.Writer) (n int64, err error) {
 				if readTrunkErr == io.EOF {
 					break
 				}
-				err = fmt.Errorf("message write trunk failed, %v", readTrunkErr)
+				err = errors.ServiceError("message write into writer failed").WithCause(readTrunkErr)
 				return
 			}
 			if trunked > 0 {
 				nn, writeErr := snappyWriter.Write(trunk[0:trunked])
 				if writeErr != nil {
-					err = writeErr
+					err = errors.ServiceError("message write into writer failed").WithCause(writeErr)
 					return
 				}
 				n = n + int64(nn)
@@ -269,7 +270,7 @@ func (msg *Message) WriteTo(w io.Writer) (n int64, err error) {
 		}
 		flushErr := snappyWriter.Flush()
 		if flushErr != nil {
-			err = fmt.Errorf("message write trunk failed, %v", flushErr)
+			err = errors.ServiceError("message write into writer failed").WithCause(flushErr)
 			return
 		}
 		_ = snappyWriter.Close()
