@@ -1,26 +1,23 @@
 package raft
 
 import (
-	"errors"
 	"fmt"
-	"path/filepath"
+	"github.com/aacfactory/errors"
 	"strings"
 	"time"
 )
 
-func DefaultOptions(id string, localStorePath string, fsm FSM, local string, memberAddrs ...string) Options {
-	localStorePath = strings.TrimSpace(localStorePath)
+func DefaultOptions(id string, fsm FSM, store Store, snapshot SnapshotStore, addresses Addresses, transport Transport) Options {
 	return Options{
 		Id:        id,
-		Addresses: DesignatedAddresses(local, memberAddrs...),
+		Addresses: addresses,
 		Nonvoter:  false,
 		TLS:       nil,
 		Leader:    DefaultLeaderOptions(),
-		Snapshot:  DefaultSnapshotOptions(FileSnapshotStore(filepath.Join(localStorePath, "snapshots"))),
-		MetaStore: FileMetaStore(filepath.Join(localStorePath, "meta")),
-		LogStore:  FileLogStore(filepath.Join(localStorePath, "logs")),
+		Snapshot:  DefaultSnapshotOptions(snapshot),
+		Store:     store,
 		FSM:       fsm,
-		Transport: TcpTransport(),
+		Transport: transport,
 	}
 }
 
@@ -31,39 +28,35 @@ type Options struct {
 	TLS       TLS
 	Leader    LeaderOptions
 	Snapshot  SnapshotOptions
-	MetaStore MetaStore
-	LogStore  LogStore
+	Store     Store
 	FSM       FSM
 	Transport Transport
 }
 
 func (options Options) Verify() (err error) {
-	errs := make([]error, 0, 1)
+	errs := errors.MakeErrors()
 	options.Id = strings.TrimSpace(options.Id)
 	if options.Id == "" {
-		errs = append(errs, errors.New("id is required"))
+		errs.Append(errors.ServiceError("id is required"))
 	}
 	if options.Addresses == nil {
-		errs = append(errs, errors.New("members are required"))
+		errs.Append(errors.ServiceError("members are required"))
 	}
 	leaderErr := options.Leader.Verify()
 	if leaderErr != nil {
-		errs = append(errs, leaderErr)
+		errs.Append(leaderErr)
 	}
-	if options.MetaStore == nil {
-		errs = append(errs, errors.New("meta store is required"))
-	}
-	if options.LogStore == nil {
-		errs = append(errs, errors.New("log store is required"))
+	if options.Store == nil {
+		errs.Append(errors.ServiceError("store is required"))
 	}
 	if options.FSM == nil {
-		errs = append(errs, errors.New("fsm is required"))
+		errs.Append(errors.ServiceError("fsm is required"))
 	}
 	if options.Transport == nil {
-		errs = append(errs, errors.New("transport is required"))
+		errs.Append(errors.ServiceError("transport is required"))
 	}
 	if len(errs) > 0 {
-		err = errors.Join(errs...)
+		err = errors.ServiceError("verify options failed").WithCause(errs.Error())
 	}
 	return
 }
@@ -78,34 +71,39 @@ func DefaultLeaderOptions() LeaderOptions {
 }
 
 type LeaderOptions struct {
-	HeartbeatTimeout   time.Duration
-	ElectionTimeout    time.Duration
-	CommitTimeout      time.Duration
+	HeartbeatTimeout time.Duration
+	ElectionTimeout  time.Duration
+	CommitTimeout    time.Duration
+	// LeaderLeaseTimeout
+	// 用于控制“租约”的持续时间
+	// 作为领导者而无法联系法定人数
+	// 个节点。如果我们在没有联系的情况下达到这个间隔，我们将
+	// 辞去领导职务。
 	LeaderLeaseTimeout time.Duration
 }
 
 func (options LeaderOptions) Verify() (err error) {
-	errs := make([]error, 0, 1)
+	errs := errors.MakeErrors()
 	if options.HeartbeatTimeout < 5*time.Millisecond {
-		errs = append(errs, errors.New("HeartbeatTimeout is too low"))
+		errs.Append(errors.ServiceError("heartbeat timeout is too low"))
 	}
 	if options.ElectionTimeout < 5*time.Millisecond {
-		errs = append(errs, errors.New("ElectionTimeout is too low"))
+		errs.Append(errors.ServiceError("election timeout is too low"))
 	}
 	if options.CommitTimeout < 1*time.Millisecond {
-		errs = append(errs, errors.New("CommitTimeout is too low"))
+		errs.Append(errors.ServiceError("commit timeout is too low"))
 	}
 	if options.LeaderLeaseTimeout < 5*time.Millisecond {
-		errs = append(errs, errors.New("LeaderLeaseTimeout is too low"))
+		errs.Append(errors.ServiceError("leader lease timeout is too low"))
 	}
 	if options.LeaderLeaseTimeout > options.HeartbeatTimeout {
-		errs = append(errs, fmt.Errorf("LeaderLeaseTimeout (%s) cannot be larger than heartbeat timeout (%s)", options.LeaderLeaseTimeout, options.HeartbeatTimeout))
+		errs.Append(errors.ServiceError(fmt.Sprintf("leader lease timeout (%s) cannot be larger than heartbeat timeout (%s)", options.LeaderLeaseTimeout, options.HeartbeatTimeout)))
 	}
 	if options.ElectionTimeout < options.HeartbeatTimeout {
-		errs = append(errs, fmt.Errorf("ElectionTimeout (%s) must be equal or greater than Heartbeat Timeout (%s)", options.ElectionTimeout, options.HeartbeatTimeout))
+		errs.Append(errors.ServiceError(fmt.Sprintf("election timeout (%s) must be equal or greater than heartbeat Timeout (%s)", options.ElectionTimeout, options.HeartbeatTimeout)))
 	}
 	if len(errs) > 0 {
-		err = errors.Join(errs...)
+		err = errors.ServiceError("verify leader options failed").WithCause(errs.Error())
 	}
 	return
 }
