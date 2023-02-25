@@ -2,14 +2,14 @@ package raft
 
 import (
 	"context"
-	"errors"
+	"github.com/aacfactory/errors"
 	"time"
 )
 
 func New(options Options) (r Raft, err error) {
 	err = options.Verify()
 	if err != nil {
-		err = errors.Join(errors.New("new raft failed"), err)
+		err = errors.ServiceError("new raft failed").WithCause(err)
 		return
 	}
 
