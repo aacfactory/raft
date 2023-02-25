@@ -17,42 +17,6 @@ import (
 	"time"
 )
 
-func DefaultSnapshotOptions(store SnapshotStore) SnapshotOptions {
-	return SnapshotOptions{
-		Store:                    store,
-		TrailingLogs:             10240,
-		SnapshotInterval:         120 * time.Second,
-		SnapshotThreshold:        8192,
-		NoSnapshotRestoreOnStart: false,
-	}
-}
-
-type SnapshotOptions struct {
-	Store SnapshotStore
-	// TrailingLogs控制快照后留下的日志数量。这是为了让我们可以快速回放跟踪者的日志，而不是被迫发送整个快照。此处传递的值是使用的初始设置。这可以在运行期间使用ReloadConfig进行调整。
-	TrailingLogs uint64
-	// SnapshotThreshold控制在执行快照之前必须有多少未完成的日志。这是为了通过重放一小组日志来防止过度快照。此处传递的值是使用的初始设置。这可以在运行期间使用ReloadConfig进行调整。
-	SnapshotThreshold uint64
-	SnapshotInterval  time.Duration
-
-	NoSnapshotRestoreOnStart bool
-}
-
-func (options SnapshotOptions) Verify() (err error) {
-	errs := errors.MakeErrors()
-	if options.Store == nil {
-		errs.Append(errors.ServiceError("snapshot store is too low"))
-	}
-	if options.SnapshotInterval < 5*time.Millisecond {
-		errs.Append(errors.ServiceError("snapshot interval is too low"))
-	}
-	err = errs.Error()
-	if err != nil {
-		err = errors.ServiceError("verify snapshot options failed").WithCause(err)
-	}
-	return
-}
-
 type SnapshotSink interface {
 	io.WriteCloser
 	Id() string
