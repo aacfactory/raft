@@ -2,8 +2,8 @@ package raft
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
+	"github.com/aacfactory/errors"
 	"github.com/aacfactory/raft/encoding"
 	"github.com/aacfactory/raft/files"
 	"hash"
@@ -39,15 +39,16 @@ type SnapshotOptions struct {
 }
 
 func (options SnapshotOptions) Verify() (err error) {
-	errs := make([]error, 0, 1)
+	errs := errors.MakeErrors()
 	if options.Store == nil {
-		errs = append(errs, errors.New("snapshot store is too low"))
+		errs.Append(errors.ServiceError("snapshot store is too low"))
 	}
 	if options.SnapshotInterval < 5*time.Millisecond {
-		errs = append(errs, errors.New("SnapshotInterval is too low"))
+		errs.Append(errors.ServiceError("snapshot interval is too low"))
 	}
-	if len(errs) > 0 {
-		err = errors.Join(errs...)
+	err = errs.Error()
+	if err != nil {
+		err = errors.ServiceError("verify snapshot options failed").WithCause(err)
 	}
 	return
 }
@@ -125,24 +126,24 @@ func (meta *SnapshotMeta) Decode(r io.Reader) (err error) {
 	var decodeErr error
 	meta.Id, decodeErr = decoder.LengthFieldBasedStringFrame()
 	if decodeErr != nil {
-		err = errors.Join(errors.New("decode SnapshotMeta failed"), decodeErr)
+		err = errors.ServiceError("decode snapshot meta failed").WithCause(decodeErr)
 		return
 	}
 	meta.Index, decodeErr = decoder.Uint64()
 	if decodeErr != nil {
-		err = errors.Join(errors.New("decode SnapshotMeta failed"), decodeErr)
+		err = errors.ServiceError("decode snapshot meta failed").WithCause(decodeErr)
 		return
 	}
 	meta.Term, decodeErr = decoder.Uint64()
 	if decodeErr != nil {
-		err = errors.Join(errors.New("decode SnapshotMeta failed"), decodeErr)
+		err = errors.ServiceError("decode snapshot meta failed").WithCause(decodeErr)
 		return
 	}
 	meta.Configuration.Servers = make([]Server, 0, 1)
 	serverLen := uint64(0)
 	serverLen, decodeErr = decoder.Uint64()
 	if decodeErr != nil {
-		err = errors.Join(errors.New("decode SnapshotMeta failed"), decodeErr)
+		err = errors.ServiceError("decode snapshot meta failed").WithCause(decodeErr)
 		return
 	}
 	if serverLen > 0 {
@@ -150,19 +151,19 @@ func (meta *SnapshotMeta) Decode(r io.Reader) (err error) {
 			serverSuffrage := uint64(0)
 			serverSuffrage, decodeErr = decoder.Uint64()
 			if decodeErr != nil {
-				err = errors.Join(errors.New("decode SnapshotMeta failed"), decodeErr)
+				err = errors.ServiceError("decode snapshot meta failed").WithCause(decodeErr)
 				return
 			}
 			serverId := ""
 			serverId, decodeErr = decoder.LengthFieldBasedStringFrame()
 			if decodeErr != nil {
-				err = errors.Join(errors.New("decode SnapshotMeta failed"), decodeErr)
+				err = errors.ServiceError("decode snapshot meta failed").WithCause(decodeErr)
 				return
 			}
 			serverAddr := ""
 			serverAddr, decodeErr = decoder.LengthFieldBasedStringFrame()
 			if decodeErr != nil {
-				err = errors.Join(errors.New("decode SnapshotMeta failed"), decodeErr)
+				err = errors.ServiceError("decode snapshot meta failed").WithCause(decodeErr)
 				return
 			}
 			meta.Configuration.Servers = append(meta.Configuration.Servers, Server{
@@ -174,17 +175,17 @@ func (meta *SnapshotMeta) Decode(r io.Reader) (err error) {
 	}
 	meta.ConfigurationIndex, decodeErr = decoder.Uint64()
 	if decodeErr != nil {
-		err = errors.Join(errors.New("decode SnapshotMeta failed"), decodeErr)
+		err = errors.ServiceError("decode snapshot meta failed").WithCause(decodeErr)
 		return
 	}
 	meta.Size, decodeErr = decoder.Uint64()
 	if decodeErr != nil {
-		err = errors.Join(errors.New("decode SnapshotMeta failed"), decodeErr)
+		err = errors.ServiceError("decode snapshot meta failed").WithCause(decodeErr)
 		return
 	}
 	meta.CRC, decodeErr = decoder.LengthFieldBasedFrame()
 	if decodeErr != nil {
-		err = errors.Join(errors.New("decode SnapshotMeta failed"), decodeErr)
+		err = errors.ServiceError("decode snapshot meta failed").WithCause(decodeErr)
 		return
 	}
 	return
@@ -203,22 +204,21 @@ const (
 	snapshotFileSuffix    = ".spt"
 )
 
-func FileSnapshotStore(dir string) (store SnapshotStore) {
+func FileSnapshotStore(dir string) (store SnapshotStore, err error) {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
-		panic(errors.New("create FileSnapshotStore failed cause dir is empty"))
+		err = errors.ServiceError("create file snapshot store failed").WithCause(errors.ServiceError("dir is empty"))
 		return
 	}
-	var err error
 	dir, err = filepath.Abs(dir)
 	if err != nil {
-		panic(errors.Join(errors.New("create FileSnapshotStore failed cause get absolute representation of dir"), err))
+		err = errors.ServiceError("create file snapshot store failed").WithCause(err)
 		return
 	}
 	exist := files.ExistFile(dir)
 	if !exist {
 		if mkdirErr := os.MkdirAll(dir, 0640); mkdirErr != nil {
-			panic(errors.Join(errors.New("failed to make snapshot dir"), mkdirErr))
+			err = errors.ServiceError("create file snapshot store failed").WithCause(mkdirErr)
 			return
 		}
 	}
@@ -240,12 +240,12 @@ func (store *fileSnapshotStore) Create(index uint64, term uint64, configuration 
 	path := filepath.Join(store.path, id+tmpSnapshotFileSuffix)
 	exist := files.ExistFile(path)
 	if exist {
-		err = errors.New("create snapshot failed cause file is exist")
+		err = errors.ServiceError("create snapshot sink failed").WithCause(errors.ServiceError("file is exist"))
 		return
 	}
 	file, createFileErr := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_SYNC, 0640)
 	if createFileErr != nil {
-		err = errors.Join(errors.New("create snapshot failed cause create file"), createFileErr)
+		err = errors.ServiceError("create snapshot sink failed").WithCause(createFileErr)
 		return
 	}
 
@@ -270,7 +270,7 @@ func (store *fileSnapshotStore) Create(index uint64, term uint64, configuration 
 
 	// write meta
 	if _, metaErr := fileSink.meta.WriteTo(fileSink); err != nil {
-		err = errors.Join(errors.New("create snapshot failed cause write metadata"), metaErr)
+		err = errors.ServiceError("create snapshot sink failed").WithCause(metaErr)
 		return
 	}
 
@@ -281,7 +281,7 @@ func (store *fileSnapshotStore) Create(index uint64, term uint64, configuration 
 func (store *fileSnapshotStore) List() (metas []*SnapshotMeta, err error) {
 	entries, readErr := os.ReadDir(store.path)
 	if readErr != nil {
-		err = errors.Join(errors.New("list snapshot failed cause read dir"), readErr)
+		err = errors.ServiceError("list snapshot failed").WithCause(readErr)
 		return
 	}
 	if entries == nil || len(entries) == 0 {
@@ -302,14 +302,14 @@ func (store *fileSnapshotStore) List() (metas []*SnapshotMeta, err error) {
 		}
 		file, openFileErr := os.OpenFile(path, os.O_RDONLY, 0640)
 		if openFileErr != nil {
-			err = errors.Join(errors.New("list snapshot failed cause open file"), openFileErr)
+			err = errors.ServiceError("list snapshot failed").WithCause(openFileErr)
 			return
 		}
 		meta := &SnapshotMeta{}
 		decodeErr := meta.Decode(file)
 		if decodeErr != nil {
 			_ = file.Close()
-			err = errors.Join(errors.New("list snapshot failed cause decode meta"), decodeErr)
+			err = errors.ServiceError("list snapshot failed").WithCause(decodeErr)
 			return
 		}
 		msec, msecErr := strconv.ParseInt(filename[strings.LastIndexByte(filename, '-')+1:strings.LastIndexByte(filename, '.')], 10, 64)
@@ -329,18 +329,18 @@ func (store *fileSnapshotStore) Open(id string) (meta *SnapshotMeta, reader io.R
 	path := filepath.Join(store.path, id+snapshotFileSuffix)
 	exist := files.ExistFile(path)
 	if !exist {
-		err = errors.New("open snapshot failed cause file is not exist")
+		err = errors.ServiceError("open snapshot failed").WithCause(errors.ServiceError("file is not exist"))
 		return
 	}
 	file, openFileErr := os.OpenFile(path, os.O_RDONLY, 0640)
 	if openFileErr != nil {
-		err = errors.Join(errors.New("open snapshot failed cause open file"), openFileErr)
+		err = errors.ServiceError("open snapshot failed").WithCause(openFileErr)
 		return
 	}
 	meta = &SnapshotMeta{}
 	readMetaErr := meta.Decode(file)
 	if readMetaErr != nil {
-		err = errors.Join(errors.New("open snapshot failed cause read meta"), readMetaErr)
+		err = errors.ServiceError("open snapshot failed").WithCause(readMetaErr)
 		return
 	}
 	msec, msecErr := strconv.ParseInt(path[strings.LastIndexByte(path, '-')+1:strings.LastIndexByte(path, '.')], 10, 64)
@@ -362,12 +362,12 @@ type FileSnapshotSink struct {
 
 func (sink *FileSnapshotSink) Write(p []byte) (n int, err error) {
 	if sink.closed {
-		err = errors.New("snapshot sink was closed")
+		err = errors.ServiceError("snapshot sink write failed").WithCause(errors.ServiceError("snapshot sink was closed"))
 		return
 	}
 	n, err = sink.buffered.Write(p)
 	if err != nil {
-		err = errors.Join(errors.New("snapshot sink write failed"), err)
+		err = errors.ServiceError("snapshot sink write failed").WithCause(err)
 		return
 	}
 	sink.meta.Size = sink.meta.Size + uint64(n)
@@ -376,19 +376,19 @@ func (sink *FileSnapshotSink) Write(p []byte) (n int, err error) {
 
 func (sink *FileSnapshotSink) Close() (err error) {
 	if sink.closed {
-		err = errors.New("snapshot sink was closed")
+		err = errors.ServiceError("snapshot sink close failed").WithCause(errors.ServiceError("snapshot sink was closed"))
 		return
 	}
 	sink.closed = true
 	if flushErr := sink.buffered.Flush(); flushErr != nil {
 		sink.remove()
-		err = errors.Join(errors.New("snapshot sink close failed"), flushErr)
+		err = errors.ServiceError("snapshot sink close failed").WithCause(flushErr)
 		return
 	}
 	_, seekErr := sink.file.Seek(0, 0)
 	if seekErr != nil {
 		sink.remove()
-		err = errors.Join(errors.New("snapshot sink close failed"), seekErr)
+		err = errors.ServiceError("snapshot sink close failed").WithCause(seekErr)
 		return
 	}
 	// update crc
@@ -397,20 +397,20 @@ func (sink *FileSnapshotSink) Close() (err error) {
 	_, writeMetaErr := sink.meta.WriteTo(sink.file)
 	if writeMetaErr != nil {
 		sink.remove()
-		err = errors.Join(errors.New("snapshot sink close failed"), writeMetaErr)
+		err = errors.ServiceError("snapshot sink close failed").WithCause(writeMetaErr)
 		return
 	}
 	// sync
 	syncErr := sink.file.Sync()
 	if syncErr != nil {
 		sink.remove()
-		err = errors.Join(errors.New("snapshot sink close failed"), syncErr)
+		err = errors.ServiceError("snapshot sink close failed").WithCause(syncErr)
 		return
 	}
 	closeErr := sink.file.Close()
 	if closeErr != nil {
 		sink.remove()
-		err = errors.Join(errors.New("snapshot sink close failed"), closeErr)
+		err = errors.ServiceError("snapshot sink close failed").WithCause(closeErr)
 		return
 	}
 	// rename
@@ -418,7 +418,7 @@ func (sink *FileSnapshotSink) Close() (err error) {
 	renameErr := os.Rename(sink.path, statePath)
 	if renameErr != nil {
 		sink.remove()
-		err = errors.Join(errors.New("snapshot sink close failed"), renameErr)
+		err = errors.ServiceError("snapshot sink close failed").WithCause(renameErr)
 		return
 	}
 	return
