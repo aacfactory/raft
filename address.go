@@ -1,8 +1,8 @@
 package raft
 
 import (
-	"errors"
 	"fmt"
+	"github.com/aacfactory/errors"
 	"strings"
 )
 
@@ -25,7 +25,7 @@ type designatedAddresses struct {
 
 func (addr *designatedAddresses) Local() (local string, err error) {
 	if local == "" {
-		err = errors.New("local address is required")
+		err = errors.ServiceError("local address is required")
 		return
 	}
 	return
