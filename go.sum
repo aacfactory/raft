@@ -1,9 +1,9 @@
-github.com/aacfactory/errors v1.13.0 h1:/b9fyT2hZ7Tifj9Z9i68UOGbyDsRHKCjWRCYY7HC3IA=
-github.com/aacfactory/errors v1.13.0/go.mod h1:WUwbURzkHAraSqTIy6QGhq/W7TL+piTYHzdi/bbpk5s=
+github.com/aacfactory/errors v1.13.2 h1:NFO/SKW9vdSpTXvrnLl8GJETgalipE1qIlReDnc3lGU=
+github.com/aacfactory/errors v1.13.2/go.mod h1:WUwbURzkHAraSqTIy6QGhq/W7TL+piTYHzdi/bbpk5s=
 github.com/aacfactory/rings v1.1.0 h1:KbWNUhIZFZ7t5bJ/s+SzWRoOdk2nJ4yYti0eG0cFRhY=
 github.com/aacfactory/rings v1.1.0/go.mod h1:CFeFssxL0lvArISNUmkuxFxqrKHg/05rwobDdcg2DLA=
-github.com/aacfactory/wal v1.3.3 h1:3nX1v44PXddwc44aoymdMp/QlLvm3d1AyGdr0yjA35E=
-github.com/aacfactory/wal v1.3.3/go.mod h1:8HnQC3FL51qIeeAk0KGrvryiPs7cNuYNvhN3NzOA1O0=
+github.com/aacfactory/wal v1.4.0 h1:E8/IjW2HRaBCqaLLTdRet9FGoiEYNPEDG3/x0zeysDA=
+github.com/aacfactory/wal v1.4.0/go.mod h1:InMkhzD0RHAxiCI4B2e6RRkh/7akWY2pQSua0shwFAo=
 github.com/cespare/xxhash/v2 v2.2.0 h1:DC2CZ1Ep5Y4k3ZQ899DldepgrayRUGE6BBZ/cd9Cj44=
 github.com/cespare/xxhash/v2 v2.2.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/golang/snappy v0.0.4 h1:yAGX7huGHXlcLOEtBnF4w7FQwA26wojNCwOYAEhLjQM=

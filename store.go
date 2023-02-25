@@ -51,7 +51,7 @@ func FileStore(dir string, caches int) (store Store, err error) {
 		err = errors.ServiceError("create file store failed").WithCause(metaErr)
 		return
 	}
-	aLog, createLogErr := wal.New(filepath.Join(dir, logFilename), wal.Unit64KeyEncoder(), wal.WithCacheSize(caches), wal.EnableTransaction(wal.ReadUncommitted))
+	aLog, createLogErr := wal.New(filepath.Join(dir, logFilename), wal.Unit64KeyEncoder(), wal.WithCacheSize(caches), wal.EnableTransaction(wal.ReadUncommitted), wal.UseSOT(wal.SOT1K))
 	if createLogErr != nil {
 		err = errors.ServiceError("create file store failed").WithCause(createLogErr)
 		return
@@ -71,7 +71,7 @@ func newFileMetaStore(dir string, caches int) (meta *fileMetaStore, err error) {
 		err = errors.ServiceError("create file meta store failed").WithCause(errors.ServiceError("dir is empty"))
 		return
 	}
-	stable, createStableErr := wal.New(filepath.Join(dir, stableFilename), wal.StringKeyEncoder(), wal.WithCacheSize(caches))
+	stable, createStableErr := wal.New(filepath.Join(dir, stableFilename), wal.StringKeyEncoder(), wal.WithCacheSize(caches), wal.UseSOT(wal.SOT128B))
 	if createStableErr != nil {
 		err = errors.ServiceError("create file meta store failed").WithCause(createStableErr)
 		return

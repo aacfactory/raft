@@ -3,9 +3,9 @@ module github.com/aacfactory/raft
 go 1.20
 
 require (
-	github.com/aacfactory/errors v1.13.0
+	github.com/aacfactory/errors v1.13.2
 	github.com/aacfactory/rings v1.1.0
-	github.com/aacfactory/wal v1.3.3
+	github.com/aacfactory/wal v1.4.0
 	github.com/golang/snappy v0.0.4
 	github.com/valyala/bytebufferpool v1.0.0
 )
